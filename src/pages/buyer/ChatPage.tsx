@@ -16,6 +16,7 @@ export default function ChatPage({ conversationId, onBack }: Props) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sendError, setSendError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
@@ -55,15 +56,18 @@ export default function ChatPage({ conversationId, onBack }: Props) {
           return;
         }
 
-        setConversation(conv as Conversation);
+        setConversation(conv as Conversation | null);
 
         // Load messages
-        const { data: msgs } = await supabase
+        const { data: msgs, error: msgsErr } = await supabase
           .from('messages')
           .select('*')
           .eq('conversation_id', conversationId)
           .order('created_at', { ascending: true });
 
+        if (msgsErr) {
+          console.error('Error loading messages:', msgsErr);
+        }
         setMessages((msgs as Message[]) ?? []);
       } catch (err) {
         console.error('Load error:', err);
@@ -92,6 +96,8 @@ export default function ChatPage({ conversationId, onBack }: Props) {
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log('Subscribed to messages');
+        } else if (status === 'SUBSCRIPTION_ERROR' || status === 'TIMED_OUT') {
+          console.error('Subscription error:', status);
         }
       });
 
@@ -105,6 +111,7 @@ export default function ChatPage({ conversationId, onBack }: Props) {
     if (!text.trim() || !user || sending) return;
 
     setSending(true);
+    setSendError('');
     const body = text.trim();
     setText('');
 
@@ -113,14 +120,16 @@ export default function ChatPage({ conversationId, onBack }: Props) {
         conversation_id: conversationId,
         sender_id: user.id,
         body,
-      });
+      } as never);
 
       if (error) {
         console.error('Send error:', error);
+        setSendError('Failed to send message. Please try again.');
         setText(body); // restore text on error
       }
     } catch (err) {
       console.error('Send error:', err);
+      setSendError('Failed to send message. Please try again.');
       setText(body);
     } finally {
       setSending(false);
@@ -246,6 +255,11 @@ export default function ChatPage({ conversationId, onBack }: Props) {
 
       {/* Input */}
       <div className="bg-white border-t border-gray-100 px-4 py-3 safe-bottom flex items-end gap-2 shadow-lg">
+        {sendError && (
+          <div className="absolute bottom-20 left-4 right-4 bg-red-50 text-red-600 text-xs rounded-lg p-2 border border-red-200">
+            {sendError}
+          </div>
+        )}
         <form onSubmit={sendMessage} className="flex-1 flex items-end gap-2">
           <textarea
             value={text}

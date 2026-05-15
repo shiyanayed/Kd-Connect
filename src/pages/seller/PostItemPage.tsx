@@ -30,8 +30,15 @@ export default function PostItemPage({ onBack, onSuccess }: Props) {
 
   const addPhoto = () => {
     if (!photoUrl.trim() || photos.length >= 5) return;
-    setPhotos((p) => [...p, photoUrl.trim()]);
-    setPhotoUrl('');
+    
+    // Basic URL validation
+    try {
+      new URL(photoUrl.trim());
+      setPhotos((p) => [...p, photoUrl.trim()]);
+      setPhotoUrl('');
+    } catch {
+      setError('Please enter a valid image URL');
+    }
   };
 
   const removePhoto = (i: number) => setPhotos((p) => p.filter((_, idx) => idx !== i));
@@ -40,25 +47,45 @@ export default function PostItemPage({ onBack, onSuccess }: Props) {
     e.preventDefault();
     if (!user) return;
     setError('');
+
+    // Validation
+    if (photos.length === 0) {
+      setError('Please add at least one photo');
+      return;
+    }
+
+    const priceNum = parseFloat(price);
+    if (isNaN(priceNum) || priceNum <= 0) {
+      setError('Please enter a valid price greater than 0');
+      return;
+    }
+
     setSubmitting(true);
 
-    const { error: err } = await supabase.from('items').insert({
-      seller_id: user.id,
-      title: title.trim(),
-      price: parseFloat(price),
-      description: description.trim(),
-      category,
-      location: location.trim(),
-      photos,
-      is_active: true,
-    });
+    try {
+      const { error: err } = await supabase.from('items').insert({
+        seller_id: user.id,
+        title: title.trim(),
+        price: parseFloat(price),
+        description: description.trim(),
+        category,
+        location: location.trim(),
+        photos,
+        is_active: true,
+      } as never);
 
-    setSubmitting(false);
-    if (err) {
-      setError(err.message);
-    } else {
-      setDone(true);
-      setTimeout(() => { setDone(false); onSuccess(); }, 2000);
+      if (err) {
+        console.error('Error posting item:', err);
+        setError(err.message);
+      } else {
+        setDone(true);
+        setTimeout(() => { setDone(false); onSuccess(); }, 2000);
+      }
+    } catch (err) {
+      console.error('Unexpected error posting item:', err);
+      setError('Failed to post item. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
   };
 

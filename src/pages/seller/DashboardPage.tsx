@@ -21,18 +21,32 @@ export default function DashboardPage({ setPage }: Props) {
   useEffect(() => {
     if (!user) return;
     const load = async () => {
-      const [itemsRes, convsRes] = await Promise.all([
-        supabase.from('items').select('id, views').eq('seller_id', user.id).eq('is_active', true),
-        supabase.from('conversations').select('id').eq('seller_id', user.id),
-      ]);
-      const items = itemsRes.data ?? [];
-      const totalViews = items.reduce((s, i) => s + (i.views ?? 0), 0);
-      setStats({
-        totalItems: items.length,
-        totalViews,
-        totalMessages: convsRes.data?.length ?? 0,
-      });
-      setLoading(false);
+      try {
+        const [itemsRes, convsRes] = await Promise.all([
+          supabase.from('items').select('id, views').eq('seller_id', user.id).eq('is_active', true),
+          supabase.from('conversations').select('id').eq('seller_id', user.id),
+        ]);
+
+        if (itemsRes.error) {
+          console.error('Error fetching items:', itemsRes.error);
+        }
+        if (convsRes.error) {
+          console.error('Error fetching conversations:', convsRes.error);
+        }
+
+        const items = itemsRes.data ?? [];
+        const totalViews = items.reduce((s, i) => s + (i.views ?? 0), 0);
+        setStats({
+          totalItems: items.length,
+          totalViews,
+          totalMessages: convsRes.data?.length ?? 0,
+        });
+      } catch (err) {
+        console.error('Unexpected error loading stats:', err);
+        setStats({ totalItems: 0, totalViews: 0, totalMessages: 0 });
+      } finally {
+        setLoading(false);
+      }
     };
     load();
   }, [user]);

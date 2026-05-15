@@ -14,30 +14,34 @@ export default function ItemDetailPage({ item, onBack, onChat }: Props) {
   const { user, profile } = useAuth();
   const [photoIdx, setPhotoIdx] = useState(0);
   const [starting, setStarting] = useState(false);
+  const [error, setError] = useState('');
 
   const photos = item.photos.length > 0
     ? item.photos
     : ['https://images.pexels.com/photos/4482900/pexels-photo-4482900.jpeg?auto=compress&cs=tinysrgb&w=600'];
 
   useEffect(() => {
-    supabase.rpc('increment_item_views', { item_id: item.id }).catch(() => {});
+    supabase.rpc('increment_item_views', { item_id: item.id }).catch((err) => {
+      console.error('Error incrementing item views:', err);
+    });
   }, [item.id]);
 
   const handleMessageSeller = async () => {
+    setError('');
     if (!user || !profile) {
-      alert('Please log in first');
+      setError('Please log in first');
       return;
     }
 
     if (user.id === item.seller_id) {
-      alert('You cannot message yourself');
+      setError('You cannot message yourself');
       return;
     }
 
     setStarting(true);
     try {
       // Check if conversation already exists
-      const { data: existing } = await supabase
+      const { data: existing, error: existingError } = await supabase
         .from('conversations')
         .select('id')
         .eq('item_id', item.id)
@@ -45,25 +49,31 @@ export default function ItemDetailPage({ item, onBack, onChat }: Props) {
         .eq('seller_id', item.seller_id)
         .maybeSingle();
 
+      if (existingError) {
+        console.error('Error checking existing conversation:', existingError);
+        setError('Failed to start chat. Please try again.');
+        return;
+      }
+
       if (existing) {
         onChat(existing.id);
         return;
       }
 
       // Create new conversation
-      const { data: newConv, error } = await supabase
+      const { data: newConv, error: insertError } = await supabase
         .from('conversations')
         .insert({
           item_id: item.id,
           buyer_id: user.id,
           seller_id: item.seller_id,
-        })
+        } as never)
         .select('id')
         .single();
 
-      if (error) {
-        console.error('Conv error:', error);
-        alert('Failed to start chat. Please try again.');
+      if (insertError) {
+        console.error('Conv error:', insertError);
+        setError('Failed to start chat. Please try again.');
         return;
       }
 
@@ -72,7 +82,7 @@ export default function ItemDetailPage({ item, onBack, onChat }: Props) {
       }
     } catch (err) {
       console.error('Error:', err);
-      alert('Error starting chat');
+      setError('Error starting chat. Please try again.');
     } finally {
       setStarting(false);
     }
@@ -182,6 +192,11 @@ export default function ItemDetailPage({ item, onBack, onChat }: Props) {
       {/* CTA */}
       {!isSeller && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-4 py-3 safe-bottom shadow-lg">
+          {error && (
+            <div className="bg-red-50 text-red-600 text-xs rounded-lg p-2 mb-2 border border-red-200">
+              {error}
+            </div>
+          )}
           <button
             onClick={handleMessageSeller}
             disabled={starting}

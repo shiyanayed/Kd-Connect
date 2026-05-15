@@ -18,7 +18,7 @@ export default function SellerInboxPage({ onOpenChat }: Props) {
 
     const load = async () => {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('conversations')
           .select(
             `
@@ -35,9 +35,13 @@ export default function SellerInboxPage({ onOpenChat }: Props) {
           .eq('seller_id', user.id)
           .order('created_at', { ascending: false });
 
+        if (error) {
+          console.error('Error fetching conversations:', error);
+        }
         setConversations((data as Conversation[]) ?? []);
       } catch (err) {
-        console.error('Load error:', err);
+        console.error('Unexpected error loading conversations:', err);
+        setConversations([]);
       } finally {
         setLoading(false);
       }
@@ -60,7 +64,11 @@ export default function SellerInboxPage({ onOpenChat }: Props) {
           load();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIPTION_ERROR' || status === 'TIMED_OUT') {
+          console.error('Subscription error:', status);
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);

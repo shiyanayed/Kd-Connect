@@ -21,56 +21,89 @@ const CATEGORY_ICONS: Record<string, string> = {
 
 export default function HomePage({ onItemClick, setPage }: Props) {
   const { user } = useAuth();
-  const [items, setItems] = useState<Item[]>([]);
   const [filteredItems, setFilteredItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [category, setCategory] = useState<Category | 'All'>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [error, setError] = useState('');
+
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     fetchItems();
-  }, []);
+  }, [category, debouncedQuery]);
 
-  useEffect(() => {
-    filterItems();
-  }, [items, category, searchQuery]);
+  const fetchItems = async (append = false) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+      setFilteredItems([]);
+    }
 
-  const fetchItems = async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from('items')
-      .select('*, seller:profiles!seller_id(*)')
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(50);
+    try {
+      const from = append ? filteredItems.length : 0;
+      const to = from + 19;
 
-    setItems((data as Item[]) ?? []);
-    setLoading(false);
+      let query = supabase
+        .from('items')
+        .select('*, seller:profiles!seller_id(*)')
+        .eq('is_active', true);
+
+      // Apply category filter server-side
+      if (category !== 'All') {
+        query = query.eq('category', category);
+      }
+
+      // Apply search filter server-side
+      if (debouncedQuery.trim()) {
+        query = query.or(`title.ilike.%${debouncedQuery}%,description.ilike.%${debouncedQuery}%,location.ilike.%${debouncedQuery}%`);
+      }
+
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (error) {
+        console.error('Error fetching items:', error);
+        return;
+      }
+
+      const newItems = (data as Item[]) ?? [];
+      setHasMore(newItems.length === 20);
+
+      if (append) {
+        setFilteredItems((prev) => [...prev, ...newItems]);
+      } else {
+        setFilteredItems(newItems);
+      }
+    } catch (err) {
+      console.error('Unexpected error fetching items:', err);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
   };
 
-  const filterItems = () => {
-    let filtered = items;
-
-    if (category !== 'All') {
-      filtered = filtered.filter((i) => i.category === category);
-    }
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter((i) =>
-        i.title.toLowerCase().includes(q) ||
-        i.description.toLowerCase().includes(q) ||
-        i.location.toLowerCase().includes(q)
-      );
-    }
-
-    setFilteredItems(filtered);
+  const loadMore = () => {
+    if (loadingMore || !hasMore) return;
+    fetchItems(true);
   };
 
   const handleMessageFromCard = (e: React.MouseEvent, item: Item) => {
     e.stopPropagation();
+    setError('');
     if (!user) {
-      alert('Please log in first');
+      setError('Please log in first to message sellers');
       return;
     }
     onItemClick(item);
@@ -112,6 +145,11 @@ export default function HomePage({ onItemClick, setPage }: Props) {
                 className="flex-1 bg-transparent py-3 text-sm outline-none text-gray-800 placeholder-gray-400"
               />
             </div>
+            {error && (
+              <div className="mt-2 bg-red-50 text-red-600 text-xs rounded-lg p-2 border border-red-200">
+                {error}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -183,6 +221,25 @@ export default function HomePage({ onItemClick, setPage }: Props) {
                 onMessage={(e) => handleMessageFromCard(e, item)}
               />
             ))}
+          </div>
+        )}
+
+        {/* Load More Button */}
+        {!loading && filteredItems.length > 0 && hasMore && (
+          <div className="flex justify-center mt-6">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="bg-white border border-gray-200 text-gray-700 font-semibold px-6 py-3 rounded-xl active:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              {loadingMore ? 'Loading...' : 'Load More'}
+            </button>
+          </div>
+        )}
+
+        {!loading && filteredItems.length > 0 && !hasMore && (
+          <div className="text-center mt-6 text-sm text-gray-400">
+            No more items to show
           </div>
         )}
       </div>

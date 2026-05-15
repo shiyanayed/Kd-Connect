@@ -10,24 +10,57 @@ interface Props {
 export default function AccountPage({ setPage }: Props) {
   const { user, profile, signOut, refreshProfile } = useAuth();
   const [switching, setSwitching] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [roleConfirm, setRoleConfirm] = useState<'buyer' | 'seller' | null>(null);
+  const [showEnableSellerConfirm, setShowEnableSellerConfirm] = useState(false);
 
   const switchRole = async (role: 'buyer' | 'seller') => {
     if (!user || !profile || profile.active_role === role) return;
     if (role === 'seller' && !profile.is_seller) return;
+    setRoleConfirm(role);
+  };
+
+  const confirmRoleSwitch = async () => {
+    if (!roleConfirm || !user || !profile) return;
     setSwitching(true);
-    await supabase.from('profiles').update({ active_role: role }).eq('id', user.id);
-    await refreshProfile();
-    setSwitching(false);
-    setPage(role === 'seller' ? 'dashboard' : 'home');
+    try {
+      const { error } = await supabase.from('profiles').update({ active_role: roleConfirm } as never).eq('id', user.id);
+      if (error) {
+        console.error('Error switching role:', error);
+        return;
+      }
+      await refreshProfile();
+      setPage(roleConfirm === 'seller' ? 'dashboard' : 'home');
+    } catch (err) {
+      console.error('Unexpected error switching role:', err);
+    } finally {
+      setSwitching(false);
+      setRoleConfirm(null);
+    }
   };
 
   const enableSellerRole = async () => {
     if (!user || !profile) return;
+    setShowEnableSellerConfirm(true);
+  };
+
+  const confirmEnableSeller = async () => {
+    if (!user || !profile) return;
     setSwitching(true);
-    await supabase.from('profiles').update({ is_seller: true, active_role: 'seller' }).eq('id', user.id);
-    await refreshProfile();
-    setSwitching(false);
-    setPage('dashboard');
+    try {
+      const { error } = await supabase.from('profiles').update({ is_seller: true, active_role: 'seller' } as never).eq('id', user.id);
+      if (error) {
+        console.error('Error enabling seller role:', error);
+        return;
+      }
+      await refreshProfile();
+      setPage('dashboard');
+    } catch (err) {
+      console.error('Unexpected error enabling seller role:', err);
+    } finally {
+      setSwitching(false);
+      setShowEnableSellerConfirm(false);
+    }
   };
 
   return (
@@ -85,7 +118,7 @@ export default function AccountPage({ setPage }: Props) {
                 profile?.active_role === 'buyer'
                   ? 'border-blue-500 bg-blue-50 text-blue-700'
                   : 'border-gray-200 text-gray-500'
-              }`}
+              } ${switching ? 'opacity-50' : ''}`}
             >
               <ShoppingBag size={20} />
               Buyer
@@ -102,7 +135,7 @@ export default function AccountPage({ setPage }: Props) {
                   profile?.active_role === 'seller'
                     ? 'border-orange-500 bg-orange-50 text-orange-700'
                     : 'border-gray-200 text-gray-500'
-                }`}
+                } ${switching ? 'opacity-50' : ''}`}
               >
                 <Store size={20} />
                 Seller
@@ -114,7 +147,7 @@ export default function AccountPage({ setPage }: Props) {
               <button
                 onClick={enableSellerRole}
                 disabled={switching}
-                className="flex-1 flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 border-dashed border-gray-300 text-sm font-semibold text-gray-400 transition-all active:bg-gray-50"
+                className={`flex-1 flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 border-dashed border-gray-300 text-sm font-semibold text-gray-400 transition-all active:bg-gray-50 ${switching ? 'opacity-50' : ''}`}
               >
                 <Store size={20} />
                 Become a Seller
@@ -132,7 +165,7 @@ export default function AccountPage({ setPage }: Props) {
 
         {/* Sign out */}
         <button
-          onClick={signOut}
+          onClick={() => setShowSignOutConfirm(true)}
           className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-4 flex items-center gap-3 text-red-500 active:bg-red-50 transition-colors"
         >
           <LogOut size={18} />
@@ -140,6 +173,110 @@ export default function AccountPage({ setPage }: Props) {
           <ChevronRight size={16} className="ml-auto" />
         </button>
       </div>
+
+      {/* Sign Out Confirmation Dialog */}
+      {showSignOutConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                <LogOut size={24} className="text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg">Sign Out</h3>
+                <p className="text-sm text-gray-500">Are you sure you want to sign out of your account?</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowSignOutConfirm(false)}
+                className="flex-1 bg-gray-100 text-gray-700 font-semibold py-3 rounded-xl active:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  signOut();
+                  setShowSignOutConfirm(false);
+                }}
+                className="flex-1 bg-red-500 text-white font-semibold py-3 rounded-xl active:bg-red-600 transition-colors"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Role Switch Confirmation Dialog */}
+      {roleConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                {roleConfirm === 'buyer' ? <ShoppingBag size={24} className="text-blue-600" /> : <Store size={24} className="text-orange-600" />}
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg">
+                  Switch to {roleConfirm === 'buyer' ? 'Buyer' : 'Seller'} Account
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {roleConfirm === 'buyer' 
+                    ? 'You will be able to browse and message sellers.' 
+                    : 'You will be able to manage your items and respond to buyers.'}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setRoleConfirm(null)}
+                className="flex-1 bg-gray-100 text-gray-700 font-semibold py-3 rounded-xl active:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRoleSwitch}
+                disabled={switching}
+                className="flex-1 bg-blue-500 text-white font-semibold py-3 rounded-xl active:bg-blue-600 transition-colors disabled:opacity-60"
+              >
+                {switching ? 'Switching...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Enable Seller Confirmation Dialog */}
+      {showEnableSellerConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                <Store size={24} className="text-orange-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg">Become a Seller</h3>
+                <p className="text-sm text-gray-500">You'll be able to post items and sell to buyers in Kaduna.</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowEnableSellerConfirm(false)}
+                className="flex-1 bg-gray-100 text-gray-700 font-semibold py-3 rounded-xl active:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmEnableSeller}
+                disabled={switching}
+                className="flex-1 bg-orange-500 text-white font-semibold py-3 rounded-xl active:bg-orange-600 transition-colors disabled:opacity-60"
+              >
+                {switching ? 'Enabling...' : 'Become Seller'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

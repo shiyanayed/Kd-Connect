@@ -25,12 +25,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = async (uid: string) => {
-    const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
-    setProfile(data ?? null);
+    try {
+      const { data, error } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
+      if (error) {
+        console.error('Error fetching profile:', error);
+      }
+      setProfile(data ?? null);
+    } catch (err) {
+      console.error('Unexpected error fetching profile:', err);
+      setProfile(null);
+    }
   };
 
   const refreshProfile = async () => {
     if (user) await fetchProfile(user.id);
+  };
+
+  const handleSessionChange = async (session: any) => {
+    setUser(session?.user ?? null);
+    if (session?.user) {
+      await fetchProfile(session.user.id);
+      setLoading(false);
+    } else {
+      setProfile(null);
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -43,17 +62,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        (async () => {
-          await fetchProfile(session.user.id);
-          setLoading(false);
-        })();
-      } else {
-        setProfile(null);
-        setLoading(false);
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleSessionChange(session);
     });
 
     return () => subscription.unsubscribe();

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Eye, ToggleLeft, ToggleRight, PlusCircle, MapPin } from 'lucide-react';
+import { Eye, ToggleLeft, ToggleRight, PlusCircle, MapPin, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { Item } from '../../lib/types';
 import { useAuth } from '../../context/AuthContext';
@@ -13,26 +13,52 @@ export default function MyItemsPage({ setPage }: Props) {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [confirmToggle, setConfirmToggle] = useState<Item | null>(null);
 
   useEffect(() => {
     if (!user) return;
     const load = async () => {
-      const { data } = await supabase
-        .from('items')
-        .select('*')
-        .eq('seller_id', user.id)
-        .order('created_at', { ascending: false });
-      setItems((data as Item[]) ?? []);
-      setLoading(false);
+      try {
+        const { data, error } = await supabase
+          .from('items')
+          .select('*')
+          .eq('seller_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching items:', error);
+        }
+        setItems((data as Item[]) ?? []);
+      } catch (err) {
+        console.error('Unexpected error loading items:', err);
+        setItems([]);
+      } finally {
+        setLoading(false);
+      }
     };
     load();
   }, [user]);
 
   const toggleActive = async (item: Item) => {
-    setToggling(item.id);
-    await supabase.from('items').update({ is_active: !item.is_active }).eq('id', item.id);
-    setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, is_active: !i.is_active } : i));
-    setToggling(null);
+    setConfirmToggle(item);
+  };
+
+  const confirmToggleAction = async () => {
+    if (!confirmToggle) return;
+    setToggling(confirmToggle.id);
+    try {
+      const { error } = await supabase.from('items').update({ is_active: !confirmToggle.is_active } as never).eq('id', confirmToggle.id);
+      if (error) {
+        console.error('Error toggling item:', error);
+        return;
+      }
+      setItems((prev) => prev.map((i) => i.id === confirmToggle.id ? { ...i, is_active: !i.is_active } : i));
+    } catch (err) {
+      console.error('Unexpected error toggling item:', err);
+    } finally {
+      setToggling(null);
+      setConfirmToggle(null);
+    }
   };
 
   return (
@@ -117,6 +143,44 @@ export default function MyItemsPage({ setPage }: Props) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Confirmation Dialog */}
+      {confirmToggle && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                <AlertCircle size={24} className="text-orange-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg">
+                  {confirmToggle.is_active ? 'Pause Item' : 'Activate Item'}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {confirmToggle.is_active
+                    ? 'This will hide your item from buyers. You can activate it again later.'
+                    : 'This will make your item visible to buyers.'}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmToggle(null)}
+                className="flex-1 bg-gray-100 text-gray-700 font-semibold py-3 rounded-xl active:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmToggleAction}
+                disabled={toggling === confirmToggle.id}
+                className="flex-1 bg-orange-500 text-white font-semibold py-3 rounded-xl active:bg-orange-600 transition-colors disabled:opacity-60"
+              >
+                {toggling === confirmToggle.id ? 'Processing...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
