@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Eye, ToggleLeft, ToggleRight, PlusCircle, MapPin, AlertCircle } from 'lucide-react';
+import { Eye, ToggleLeft, ToggleRight, PlusCircle, MapPin, AlertCircle, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { Item } from '../../lib/types';
 import { useAuth } from '../../context/AuthContext';
+import ErrorBoundary from '../../components/ErrorBoundary';
 
 interface Props {
   setPage: (p: string) => void;
@@ -14,6 +15,9 @@ export default function MyItemsPage({ setPage }: Props) {
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
   const [confirmToggle, setConfirmToggle] = useState<Item | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Item | null>(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -61,8 +65,34 @@ export default function MyItemsPage({ setPage }: Props) {
     }
   };
 
+  const handleDelete = (item: Item) => {
+    setConfirmDelete(item);
+  };
+
+  const confirmDeleteAction = async () => {
+    if (!confirmDelete) return;
+    setDeleting(confirmDelete.id);
+    setError('');
+    try {
+      const { error } = await supabase.from('items').delete().eq('id', confirmDelete.id);
+      if (error) {
+        console.error('Error deleting item:', error);
+        setError(error.message);
+        return;
+      }
+      setItems((prev) => prev.filter((i) => i.id !== confirmDelete.id));
+    } catch (err) {
+      console.error('Unexpected error deleting item:', err);
+      setError('Failed to delete item. Please try again.');
+    } finally {
+      setDeleting(null);
+      setConfirmDelete(null);
+    }
+  };
+
   return (
-    <div className="pb-20 min-h-screen bg-gray-50">
+    <ErrorBoundary>
+      <div className="pb-20 min-h-screen bg-gray-50">
       <div className="bg-white px-4 pt-5 pb-4 shadow-sm sticky top-0 z-30 flex items-center justify-between">
         <h1 className="text-xl font-extrabold text-gray-900">My Items</h1>
         <button
@@ -130,16 +160,25 @@ export default function MyItemsPage({ setPage }: Props) {
                     {item.is_active ? 'Active' : 'Paused'}
                   </span>
                 </div>
-                <button
-                  onClick={() => toggleActive(item)}
-                  disabled={toggling === item.id}
-                  className="flex-shrink-0 self-center text-gray-400 transition-colors"
-                >
-                  {item.is_active
-                    ? <ToggleRight size={28} className="text-green-500" />
-                    : <ToggleLeft size={28} />
-                  }
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => toggleActive(item)}
+                    disabled={toggling === item.id}
+                    className="flex-shrink-0 self-center text-gray-400 transition-colors"
+                  >
+                    {item.is_active
+                      ? <ToggleRight size={28} className="text-green-500" />
+                      : <ToggleLeft size={28} />
+                    }
+                  </button>
+                  <button
+                    onClick={() => handleDelete(item)}
+                    disabled={deleting === item.id}
+                    className="flex-shrink-0 self-center text-red-400 hover:text-red-600 transition-colors"
+                  >
+                    <Trash2 size={20} />
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -183,6 +222,47 @@ export default function MyItemsPage({ setPage }: Props) {
           </div>
         </div>
       )}
-    </div>
+
+      {/* Delete Confirmation Dialog */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                <AlertCircle size={24} className="text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg">Delete Item</h3>
+                <p className="text-sm text-gray-500">
+                  Are you sure you want to delete "{confirmDelete.title}"? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            {error && (
+              <div className="bg-red-50 text-red-700 text-xs rounded-lg p-3 mb-4 border border-red-200">{error}</div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setConfirmDelete(null);
+                  setError('');
+                }}
+                className="flex-1 bg-gray-100 text-gray-700 font-semibold py-3 rounded-xl active:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteAction}
+                disabled={deleting === confirmDelete.id}
+                className="flex-1 bg-red-500 text-white font-semibold py-3 rounded-xl active:bg-red-600 transition-colors disabled:opacity-60"
+              >
+                {deleting === confirmDelete.id ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      </div>
+    </ErrorBoundary>
   );
 }

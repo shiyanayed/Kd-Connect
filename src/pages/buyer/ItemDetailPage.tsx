@@ -3,6 +3,7 @@ import { ArrowLeft, MessageCircle, MapPin, Eye, ChevronLeft, ChevronRight, Loade
 import { supabase } from '../../lib/supabase';
 import type { Item } from '../../lib/types';
 import { useAuth } from '../../context/AuthContext';
+import ErrorBoundary from '../../components/ErrorBoundary';
 
 interface Props {
   item: Item;
@@ -91,7 +92,8 @@ export default function ItemDetailPage({ item, onBack, onChat }: Props) {
   const isSeller = user?.id === item.seller_id;
 
   return (
-    <div className="pb-24 min-h-screen bg-white">
+    <ErrorBoundary>
+      <div className="pb-24 min-h-screen bg-white">
       {/* Photo carousel */}
       <div className="relative bg-gray-100 aspect-square max-h-96 overflow-hidden">
         <img
@@ -216,6 +218,7 @@ export default function ItemDetailPage({ item, onBack, onChat }: Props) {
           </button>
         </div>
       )}
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }

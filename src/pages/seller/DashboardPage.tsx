@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Eye, MessageCircle, Package, TrendingUp, PlusCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
+import ErrorBoundary from '../../components/ErrorBoundary';
 
 interface Stats {
   totalItems: number;
@@ -58,7 +59,8 @@ export default function DashboardPage({ setPage }: Props) {
   ];
 
   return (
-    <div className="pb-20 min-h-screen bg-gray-50">
+    <ErrorBoundary>
+      <div className="pb-20 min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white px-4 pt-6 pb-5 shadow-sm">
         <p className="text-sm text-gray-500">Welcome back,</p>
@@ -82,9 +84,11 @@ export default function DashboardPage({ setPage }: Props) {
               <div className={`w-9 h-9 rounded-xl flex items-center justify-center mx-auto mb-2 ${color}`}>
                 <Icon size={18} />
               </div>
-              <p className="text-xl font-extrabold text-gray-900">
-                {loading ? '-' : value.toLocaleString()}
-              </p>
+              {loading ? (
+                <div className="h-6 bg-gray-200 rounded-md w-12 mx-auto animate-pulse my-0.5" />
+              ) : (
+                <p className="text-xl font-extrabold text-gray-900">{value.toLocaleString()}</p>
+              )}
               <p className="text-xs text-gray-500 mt-0.5 leading-tight">{label}</p>
             </div>
           ))}
@@ -136,6 +140,7 @@ export default function DashboardPage({ setPage }: Props) {
           </ul>
         </div>
       </div>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }

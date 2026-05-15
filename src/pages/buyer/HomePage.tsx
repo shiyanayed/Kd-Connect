@@ -5,6 +5,7 @@ import type { Item, Category } from '../../lib/types';
 import { CATEGORIES } from '../../lib/types';
 import ItemCard from '../../components/ItemCard';
 import { useAuth } from '../../context/AuthContext';
+import ErrorBoundary from '../../components/ErrorBoundary';
 
 interface Props {
   onItemClick: (item: Item) => void;
@@ -110,7 +111,8 @@ export default function HomePage({ onItemClick, setPage }: Props) {
   };
 
   return (
-    <div className="pb-20 bg-gray-50">
+    <ErrorBoundary>
+      <div className="pb-20 bg-gray-50">
       {/* Professional Header */}
       <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white sticky top-0 z-30 shadow-lg">
         <div className="px-4 pt-6 pb-5">
@@ -193,10 +195,10 @@ export default function HomePage({ onItemClick, setPage }: Props) {
               >
                 <div className="aspect-square bg-gray-200" />
                 <div className="p-3 space-y-2">
-                  <div className="h-2 bg-gray-200 rounded w-3/4" />
-                  <div className="h-2 bg-gray-200 rounded w-1/2" />
+                  <div className="h-3 bg-gray-200 rounded w-3/4" />
                   <div className="h-2 bg-gray-200 rounded w-full" />
-                  <div className="h-8 bg-gray-200 rounded" />
+                  <div className="h-2 bg-gray-100 rounded w-1/2" />
+                  <div className="h-10 bg-gray-200 rounded-xl mt-1" />
                 </div>
               </div>
             ))}
@@ -212,6 +214,16 @@ export default function HomePage({ onItemClick, setPage }: Props) {
             </p>
           </div>
         ) : (
+          // Empty state for no items at all
+          filteredItems.length === 0 && searchQuery === '' && category === 'All' ? (
+            <div className="text-center py-20 px-6">
+              <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Store size={28} className="text-gray-400" />
+              </div>
+              <p className="font-bold text-gray-700 text-base">No items listed yet</p>
+              <p className="text-sm text-gray-500 mt-1.5">Check back later or try a different category.</p>
+            </div>
+          ) : (
           <div className="grid grid-cols-2 gap-3">
             {filteredItems.map((item) => (
               <ItemCard
@@ -222,6 +234,7 @@ export default function HomePage({ onItemClick, setPage }: Props) {
               />
             ))}
           </div>
+          )
         )}
 
         {/* Load More Button */}
@@ -243,6 +256,7 @@ export default function HomePage({ onItemClick, setPage }: Props) {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }

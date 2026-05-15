@@ -3,6 +3,7 @@ import { ArrowLeft, Send, Loader } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { Conversation, Message } from '../../lib/types';
 import { useAuth } from '../../context/AuthContext';
+import ErrorBoundary from '../../components/ErrorBoundary';
 
 interface Props {
   conversationId: string;
@@ -170,7 +171,8 @@ export default function ChatPage({ conversationId, onBack }: Props) {
   }, {});
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <ErrorBoundary>
+      <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-30">
         <button onClick={onBack} className="p-1 -ml-1 text-gray-600 active:bg-gray-100 rounded-lg">
@@ -283,6 +285,7 @@ export default function ChatPage({ conversationId, onBack }: Props) {
           </button>
         </form>
       </div>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }

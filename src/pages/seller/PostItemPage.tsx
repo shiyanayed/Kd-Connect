@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { CATEGORIES } from '../../lib/types';
 import type { Category } from '../../lib/types';
+import ErrorBoundary from '../../components/ErrorBoundary';
 
 interface Props {
   onBack: () => void;
@@ -102,7 +103,8 @@ export default function PostItemPage({ onBack, onSuccess }: Props) {
   }
 
   return (
-    <div className="pb-24 min-h-screen bg-gray-50">
+    <ErrorBoundary>
+      <div className="pb-24 min-h-screen bg-gray-50">
       <div className="bg-white px-4 py-4 flex items-center gap-3 shadow-sm sticky top-0 z-30">
         <button onClick={onBack} className="p-1 -ml-1 text-gray-600">
           <ArrowLeft size={22} />
@@ -234,6 +236,7 @@ export default function PostItemPage({ onBack, onSuccess }: Props) {
           </button>
         </div>
       </form>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
