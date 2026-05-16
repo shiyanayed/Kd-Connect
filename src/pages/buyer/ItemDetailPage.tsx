@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, MessageCircle, MapPin, Eye, ChevronLeft, ChevronRight, Loader } from 'lucide-react';
+import { ArrowLeft, MessageCircle, MapPin, Eye, ChevronLeft, ChevronRight, Loader, Heart } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { Item } from '../../lib/types';
 import { useAuth } from '../../context/AuthContext';
@@ -15,11 +15,40 @@ export default function ItemDetailPage({ item, onBack, onChat }: Props) {
   const { user, profile } = useAuth();
   const [photoIdx, setPhotoIdx] = useState(0);
   const [starting, setStarting] = useState(false);
+  const [isFavorited, setIsFavorited] = useState(false);
+  const [togglingFav, setTogglingFav] = useState(false);
   const [error, setError] = useState('');
 
   const photos = item.photos.length > 0
     ? item.photos
     : ['https://images.pexels.com/photos/4482900/pexels-photo-4482900.jpeg?auto=compress&cs=tinysrgb&w=600'];
+
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('favorites')
+      .select('item_id')
+      .eq('user_id', user.id)
+      .eq('item_id', item.id)
+      .maybeSingle()
+      .then(({ data }) => setIsFavorited(!!data));
+  }, [item.id, user]);
+
+  const toggleFavorite = async () => {
+    if (!user) {
+      setError('Please log in to save favorites');
+      return;
+    }
+    setTogglingFav(true);
+    if (isFavorited) {
+      await supabase.from('favorites').delete().eq('user_id', user.id).eq('item_id', item.id);
+      setIsFavorited(false);
+    } else {
+      await supabase.from('favorites').insert({ user_id: user.id, item_id: item.id } as never);
+      setIsFavorited(true);
+    }
+    setTogglingFav(false);
+  };
 
   useEffect(() => {
     supabase.rpc('increment_item_views', { item_id: item.id }).catch((err) => {
@@ -136,6 +165,7 @@ export default function ItemDetailPage({ item, onBack, onChat }: Props) {
         <button
           onClick={onBack}
           className="absolute top-4 left-4 bg-white/95 backdrop-blur-sm rounded-full p-2 shadow-md hover:bg-white transition-colors"
+          aria-label="Go back to home"
         >
           <ArrowLeft size={20} className="text-gray-700" />
         </button>
@@ -143,10 +173,22 @@ export default function ItemDetailPage({ item, onBack, onChat }: Props) {
 
       <div className="px-4 pt-4 space-y-4">
         {/* Title + price */}
-        <div>
-          <span className="text-xs font-bold text-white bg-blue-600 px-3 py-1.5 rounded-full inline-block">
-            {item.category}
-          </span>
+        <div className="relative">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-white bg-blue-600 px-3 py-1.5 rounded-full inline-block">
+              {item.category}
+            </span>
+            <button 
+              onClick={toggleFavorite}
+              disabled={togglingFav}
+              className={`p-2 rounded-full transition-all ${
+                isFavorited ? 'bg-red-50 text-red-500' : 'bg-gray-50 text-gray-400'
+              }`}
+              aria-label={isFavorited ? "Remove from favorites" : "Save to favorites"}
+            >
+              <Heart size={20} fill={isFavorited ? "currentColor" : "none"} aria-hidden="true" />
+            </button>
+          </div>
           <h1 className="text-2xl font-extrabold text-gray-900 mt-2.5">{item.title}</h1>
           <p className="text-3xl font-extrabold text-blue-600 mt-2">
             ₦{Number(item.price).toLocaleString()}
@@ -203,6 +245,7 @@ export default function ItemDetailPage({ item, onBack, onChat }: Props) {
             onClick={handleMessageSeller}
             disabled={starting}
             className="w-full bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-60 shadow-lg text-base"
+            aria-busy={starting}
           >
             {starting ? (
               <>

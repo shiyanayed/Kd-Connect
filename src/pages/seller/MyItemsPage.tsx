@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Eye, ToggleLeft, ToggleRight, PlusCircle, MapPin, AlertCircle, Trash2 } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { Eye, ToggleLeft, ToggleRight, PlusCircle, MapPin, AlertCircle, Trash2, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { Item } from '../../lib/types';
 import { useAuth } from '../../context/AuthContext';
@@ -19,29 +19,31 @@ export default function MyItemsPage({ setPage }: Props) {
   const [confirmDelete, setConfirmDelete] = useState<Item | null>(null);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!user) return;
-    const load = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('items')
-          .select('*')
-          .eq('seller_id', user.id)
-          .order('created_at', { ascending: false });
+    setLoading(true);
+    setError('');
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('items')
+        .select('*')
+        .eq('seller_id', user.id)
+        .order('created_at', { ascending: false });
 
-        if (error) {
-          console.error('Error fetching items:', error);
-        }
-        setItems((data as Item[]) ?? []);
-      } catch (err) {
-        console.error('Unexpected error loading items:', err);
-        setItems([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+      if (fetchError) throw fetchError;
+      setItems((data as Item[]) ?? []);
+    } catch (err: any) {
+      console.error('Unexpected error loading items:', err);
+      setError('Failed to load your items');
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
+
+  useEffect(() => {
+    load();
+  }, [user, load]);
 
   const toggleActive = async (item: Item) => {
     setConfirmToggle(item);
@@ -92,9 +94,9 @@ export default function MyItemsPage({ setPage }: Props) {
 
   return (
     <ErrorBoundary>
-      <div className="pb-20 min-h-screen bg-gray-50">
-      <div className="bg-white px-4 pt-5 pb-4 shadow-sm sticky top-0 z-30 flex items-center justify-between">
-        <h1 className="text-xl font-extrabold text-gray-900">My Items</h1>
+      <div className="pb-20 min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
+      <div className="bg-white dark:bg-gray-900 px-4 pt-5 pb-4 shadow-sm sticky top-0 z-30 flex items-center justify-between border-b border-gray-100 dark:border-gray-800">
+        <h1 className="text-xl font-extrabold text-gray-900 dark:text-white">My Items</h1>
         <button
           onClick={() => setPage('post')}
           className="flex items-center gap-1.5 bg-orange-500 text-white text-xs font-bold px-3 py-2 rounded-xl active:bg-orange-600 transition-colors"
@@ -103,6 +105,18 @@ export default function MyItemsPage({ setPage }: Props) {
           Add New
         </button>
       </div>
+
+      {error && !loading && (
+        <div className="px-4 mt-3">
+          <div className="bg-red-50 text-red-600 text-sm p-4 rounded-xl border border-red-100 flex items-center justify-between">
+            <span>{error}</span>
+            <button onClick={load} className="flex items-center gap-1.5 font-bold whitespace-nowrap px-3 py-1.5 hover:bg-red-100 rounded-lg">
+              <RefreshCw size={14} />
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="space-y-3 px-4 mt-3">

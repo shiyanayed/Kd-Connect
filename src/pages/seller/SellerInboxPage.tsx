@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Inbox, Loader, Trash2, Search } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { Inbox, Loader, Trash2, Search, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { Conversation } from '../../lib/types';
 import { useAuth } from '../../context/AuthContext';
@@ -16,40 +16,41 @@ export default function SellerInboxPage({ onOpenChat }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState('');
 
+  const load = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    setError('');
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('conversations')
+        .select(
+          `
+          id,
+          item_id,
+          buyer_id,
+          seller_id,
+          created_at,
+          item:items!item_id(id, title, price, photos),
+          buyer:profiles!buyer_id(id, full_name, avatar_url),
+          seller:profiles!seller_id(id, full_name, avatar_url)
+          `
+        )
+        .eq('seller_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (fetchError) throw fetchError;
+      setConversations((data as Conversation[]) ?? []);
+    } catch (err: any) {
+      console.error('Unexpected error loading conversations:', err);
+      setError(err.message || 'Failed to load inbox');
+      setConversations([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
-
-    const load = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('conversations')
-          .select(
-            `
-            id,
-            item_id,
-            buyer_id,
-            seller_id,
-            created_at,
-            item:items!item_id(id, title, price, photos),
-            buyer:profiles!buyer_id(id, full_name, avatar_url),
-            seller:profiles!seller_id(id, full_name, avatar_url)
-            `
-          )
-          .eq('seller_id', user.id)
-          .order('created_at', { ascending: false });
-
-        if (error) {
-          console.error('Error fetching conversations:', error);
-        }
-        setConversations((data as Conversation[]) ?? []);
-      } catch (err) {
-        console.error('Unexpected error loading conversations:', err);
-        setConversations([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     load();
 
     // Subscribe to new conversations
@@ -76,7 +77,7 @@ export default function SellerInboxPage({ onOpenChat }: Props) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user, load]);
 
   const handleDeleteConversation = async (conversationId: string) => {
     if (!window.confirm('Are you sure you want to delete this conversation? All associated messages will be removed.')) {
@@ -131,8 +132,15 @@ export default function SellerInboxPage({ onOpenChat }: Props) {
 
         {error && (
           <div className="px-4 mt-4">
-            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl border border-red-100">
-              {error}
+            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl border border-red-100 flex items-center justify-between">
+              <span>{error}</span>
+              <button
+                onClick={load}
+                className="flex items-center gap-1.5 font-bold hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+              >
+                <RefreshCw size={14} />
+                Retry
+              </button>
             </div>
           </div>
         )}

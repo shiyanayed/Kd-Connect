@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { MessageCircle, Loader, Trash2, Search } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { MessageCircle, Loader, Trash2, Search, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { Conversation } from '../../lib/types';
 import { useAuth } from '../../context/AuthContext';
@@ -16,40 +16,43 @@ export default function ChatsListPage({ onOpenChat }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState('');
 
+  const load = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    setError('');
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('conversations')
+        .select(
+          `
+          id,
+          item_id,
+          buyer_id,
+          seller_id,
+          created_at,
+          item:items!item_id(id, title, price, photos),
+          buyer:profiles!buyer_id(id, full_name, avatar_url),
+          seller:profiles!seller_id(id, full_name, avatar_url)
+          `
+        )
+        .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
+        .order('created_at', { ascending: false });
+
+      if (fetchError) {
+        throw fetchError;
+      }
+      setConversations((data as Conversation[]) ?? []);
+    } catch (err: any) {
+      console.error('Unexpected error loading conversations:', err);
+      setError(err.message || 'Failed to load messages');
+      setConversations([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
-
-    const load = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('conversations')
-          .select(
-            `
-            id,
-            item_id,
-            buyer_id,
-            seller_id,
-            created_at,
-            item:items!item_id(id, title, price, photos),
-            buyer:profiles!buyer_id(id, full_name, avatar_url),
-            seller:profiles!seller_id(id, full_name, avatar_url)
-            `
-          )
-          .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
-          .order('created_at', { ascending: false });
-
-        if (error) {
-          console.error('Error fetching conversations:', error);
-        }
-        setConversations((data as Conversation[]) ?? []);
-      } catch (err) {
-        console.error('Unexpected error loading conversations:', err);
-        setConversations([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     load();
 
     // Subscribe to new conversations
@@ -76,7 +79,7 @@ export default function ChatsListPage({ onOpenChat }: Props) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user, load]);
 
   const handleDeleteConversation = async (conversationId: string) => {
     if (!window.confirm('Are you sure you want to delete this conversation? All associated messages will be removed.')) {
@@ -126,14 +129,23 @@ export default function ChatsListPage({ onOpenChat }: Props) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-gray-100 border-none rounded-xl py-2.5 pl-10 pr-4 text-sm focus:ring-2 focus:ring-orange-500"
+              aria-label="Search conversations by name or item title"
             />
           </div>
         </div>
 
         {error && (
           <div className="px-4 mt-4">
-            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl border border-red-100">
-              {error}
+            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl border border-red-100 flex items-center justify-between gap-4">
+              <span className="flex-1">{error}</span>
+              <button
+                onClick={load}
+                className="flex items-center gap-1.5 font-bold hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                aria-label="Retry loading conversations"
+              >
+                <RefreshCw size={14} />
+                Retry
+              </button>
             </div>
           </div>
         )}
@@ -178,6 +190,7 @@ export default function ChatsListPage({ onOpenChat }: Props) {
                   key={conv.id}
                   onClick={() => onOpenChat(conv.id)}
                   className="w-full bg-white rounded-2xl p-4 flex items-center gap-3 shadow-sm border border-gray-100 active:bg-gray-50 hover:shadow-md transition-all text-left"
+                  aria-label={`Open conversation with ${other?.full_name} for ${conv.item?.title}`}
                 >
                   {/* Avatar */}
                   <div className="relative flex-shrink-0">
@@ -219,6 +232,7 @@ export default function ChatsListPage({ onOpenChat }: Props) {
                       handleDeleteConversation(conv.id);
                     }}
                     className="flex-shrink-0 text-gray-400 hover:text-red-600 transition-colors p-1"
+                    aria-label="Delete conversation"
                   >
                     <Trash2 size={18} />
                   </button>

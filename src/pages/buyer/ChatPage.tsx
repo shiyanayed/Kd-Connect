@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { ArrowLeft, Send, Loader } from 'lucide-react';
+import { ArrowLeft, Send, Loader, RefreshCw, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { Conversation, Message } from '../../lib/types';
 import { useAuth } from '../../context/AuthContext';
@@ -10,73 +10,89 @@ interface Props {
   onBack: () => void;
 }
 
+type ChatMessage = Message & { isOptimistic?: boolean };
+
 export default function ChatPage({ conversationId, onBack }: Props) {
   const { user } = useAuth();
   const [conversation, setConversation] = useState<Conversation | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sendError, setSendError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
+  const markAsRead = useCallback(async () => {
+    if (!user || !messages.length) return;
+    
+    // Mark all unread messages where I am the receiver as read
+    const { error } = await supabase
+      .from('messages')
+      .update({ read: true })
+      .eq('conversation_id', conversationId)
+      .eq('receiver_id', user.id)
+      .eq('read', false);
+
+    if (error) console.error('Error marking messages as read:', error);
+  }, [conversationId, user, messages.length]);
+
   useEffect(() => {
     scrollToBottom();
-  }, [messages, scrollToBottom]);
+    markAsRead();
+  }, [messages, scrollToBottom, markAsRead]);
+
+  const load = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    setLoadError('');
+    try {
+      // Load conversation with all relationships
+      const { data: conv, error: convErr } = await supabase
+        .from('conversations')
+        .select(
+          `
+          id,
+          item_id,
+          buyer_id,
+          seller_id,
+          created_at,
+          item:items!item_id(id, title, price, photos),
+          buyer:profiles!buyer_id(id, full_name, avatar_url),
+          seller:profiles!seller_id(id, full_name, avatar_url)
+          `
+        )
+        .eq('id', conversationId)
+        .maybeSingle();
+
+      if (convErr) throw convErr;
+      if (!conv) throw new Error('Conversation not found');
+
+      setConversation(conv as Conversation | null);
+
+      // Load messages
+      const { data: msgs, error: msgsErr } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+
+      if (msgsErr) throw msgsErr;
+      setMessages((msgs as ChatMessage[]) ?? []);
+    } catch (err: any) {
+      console.error('Load error:', err);
+      setLoadError(err.message || 'Failed to load chat history');
+    } finally {
+      setLoading(false);
+    }
+  }, [conversationId, user]);
 
   useEffect(() => {
     if (!user) return;
-
-    const load = async () => {
-      try {
-        // Load conversation with all relationships
-        const { data: conv, error: convErr } = await supabase
-          .from('conversations')
-          .select(
-            `
-            id,
-            item_id,
-            buyer_id,
-            seller_id,
-            created_at,
-            item:items!item_id(id, title, price, photos),
-            buyer:profiles!buyer_id(id, full_name, avatar_url),
-            seller:profiles!seller_id(id, full_name, avatar_url)
-            `
-          )
-          .eq('id', conversationId)
-          .maybeSingle();
-
-        if (convErr) {
-          console.error('Conv error:', convErr);
-          setLoading(false);
-          return;
-        }
-
-        setConversation(conv as Conversation | null);
-
-        // Load messages
-        const { data: msgs, error: msgsErr } = await supabase
-          .from('messages')
-          .select('*')
-          .eq('conversation_id', conversationId)
-          .order('created_at', { ascending: true });
-
-        if (msgsErr) {
-          console.error('Error loading messages:', msgsErr);
-        }
-        setMessages((msgs as Message[]) ?? []);
-      } catch (err) {
-        console.error('Load error:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     load();
 
     // Subscribe to new messages in real-time
@@ -91,7 +107,15 @@ export default function ChatPage({ conversationId, onBack }: Props) {
           filter: `conversation_id=eq.${conversationId}`,
         },
         (payload) => {
-          setMessages((prev) => [...prev, payload.new as Message]);
+          const newMessage = payload.new as ChatMessage;
+          setMessages((prev) => {
+            // Replace the optimistic message with the server version
+            // This handles the transition from local state to server truth
+            if (prev.some(m => m.id === newMessage.id)) {
+              return prev.map(m => m.id === newMessage.id ? newMessage : m);
+            }
+            return [...prev, newMessage];
+          });
         }
       )
       .subscribe((status) => {
@@ -105,19 +129,34 @@ export default function ChatPage({ conversationId, onBack }: Props) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [conversationId, user]);
+  }, [conversationId, user, load]);
 
   const sendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!text.trim() || !user || sending) return;
 
-    setSending(true);
     setSendError('');
     const body = text.trim();
     setText('');
 
+    // Generate a unique ID for the optimistic update
+    const tempId = crypto.randomUUID();
+    const optimisticMessage: ChatMessage = {
+      id: tempId,
+      conversation_id: conversationId,
+      sender_id: user.id,
+      body,
+      created_at: new Date().toISOString(),
+      isOptimistic: true,
+    };
+
+    // Update UI immediately before the network request
+    setMessages((prev) => [...prev, optimisticMessage]);
+    setSending(true);
+
     try {
       const { error } = await supabase.from('messages').insert({
+        id: tempId, // Pass the ID so Supabase uses our pre-generated UUID
         conversation_id: conversationId,
         sender_id: user.id,
         body,
@@ -126,11 +165,14 @@ export default function ChatPage({ conversationId, onBack }: Props) {
       if (error) {
         console.error('Send error:', error);
         setSendError('Failed to send message. Please try again.');
+        // Rollback optimistic update on failure
+        setMessages((prev) => prev.filter(m => m.id !== tempId));
         setText(body); // restore text on error
       }
     } catch (err) {
       console.error('Send error:', err);
       setSendError('Failed to send message. Please try again.');
+      setMessages((prev) => prev.filter(m => m.id !== tempId));
       setText(body);
     } finally {
       setSending(false);
@@ -141,6 +183,22 @@ export default function ChatPage({ conversationId, onBack }: Props) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Loader size={28} className="animate-spin text-orange-500" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-6 text-center">
+        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4 text-red-600">
+          <AlertCircle size={32} />
+        </div>
+        <p className="text-gray-900 font-bold mb-2">Failed to load chat</p>
+        <p className="text-sm text-gray-500 mb-6">{loadError}</p>
+        <button onClick={load} className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold active:scale-95 transition-all">
+          <RefreshCw size={18} />
+          Try Again
+        </button>
       </div>
     );
   }
@@ -163,7 +221,7 @@ export default function ChatPage({ conversationId, onBack }: Props) {
   };
 
   // Group messages by date
-  const groupedMessages = messages.reduce((acc: Record<string, Message[]>, msg) => {
+  const groupedMessages = messages.reduce((acc: Record<string, ChatMessage[]>, msg) => {
     const date = formatDate(msg.created_at);
     if (!acc[date]) acc[date] = [];
     acc[date].push(msg);
@@ -175,8 +233,12 @@ export default function ChatPage({ conversationId, onBack }: Props) {
       <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-30">
-        <button onClick={onBack} className="p-1 -ml-1 text-gray-600 active:bg-gray-100 rounded-lg">
-          <ArrowLeft size={22} />
+        <button 
+          onClick={onBack} 
+          className="p-1 -ml-1 text-gray-600 active:bg-gray-100 rounded-lg"
+          aria-label="Back to messages list"
+        >
+          <ArrowLeft size={22} aria-hidden="true" />
         </button>
         <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center font-bold text-white text-sm flex-shrink-0">
           {otherParty?.full_name?.charAt(0).toUpperCase() ?? '?'}
@@ -235,6 +297,7 @@ export default function ChatPage({ conversationId, onBack }: Props) {
                             ? 'bg-orange-500 text-white rounded-br-sm'
                             : 'bg-white text-gray-800 rounded-bl-sm shadow-sm border border-gray-100'
                         }`}
+                        aria-label={`${isMe ? 'Your message' : 'Message from seller'}`}
                       >
                         <p className="text-sm leading-relaxed">{msg.body}</p>
                         <p
@@ -242,7 +305,7 @@ export default function ChatPage({ conversationId, onBack }: Props) {
                             isMe ? 'text-orange-200' : 'text-gray-400'
                           }`}
                         >
-                          {formatTime(msg.created_at)}
+                          {msg.isOptimistic ? 'Sending...' : formatTime(msg.created_at)}
                         </p>
                       </div>
                     </div>
@@ -275,13 +338,16 @@ export default function ChatPage({ conversationId, onBack }: Props) {
             placeholder="Type a message..."
             rows={1}
             className="flex-1 border border-gray-200 rounded-2xl px-4 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-400 max-h-24 bg-gray-50"
+            aria-label="Type message"
+            required
           />
           <button
             type="submit"
             disabled={!text.trim() || sending}
             className="bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white p-3 rounded-full disabled:opacity-40 transition-all active:scale-95 flex-shrink-0 shadow-md"
+            aria-label="Send message"
           >
-            <Send size={18} strokeWidth={2} />
+            <Send size={18} strokeWidth={2} aria-hidden="true" />
           </button>
         </form>
       </div>

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Eye, MessageCircle, Package, TrendingUp, PlusCircle } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { Eye, MessageCircle, Package, TrendingUp, PlusCircle, RefreshCw, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import ErrorBoundary from '../../components/ErrorBoundary';
@@ -18,39 +18,40 @@ export default function DashboardPage({ setPage }: Props) {
   const { user, profile } = useAuth();
   const [stats, setStats] = useState<Stats>({ totalItems: 0, totalViews: 0, totalMessages: 0 });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    setError('');
+    try {
+      const [itemsRes, convsRes] = await Promise.all([
+        supabase.from('items').select('id, views').eq('seller_id', user.id).eq('is_active', true),
+        supabase.from('conversations').select('id').eq('seller_id', user.id),
+      ]);
+
+      if (itemsRes.error) throw itemsRes.error;
+      if (convsRes.error) throw convsRes.error;
+
+      const items = itemsRes.data ?? [];
+      const totalViews = items.reduce((s, i) => s + (i.views ?? 0), 0);
+      setStats({
+        totalItems: items.length,
+        totalViews,
+        totalMessages: convsRes.data?.length ?? 0,
+      });
+    } catch (err: any) {
+      console.error('Unexpected error loading stats:', err);
+      setError('Failed to load dashboard stats');
+      setStats({ totalItems: 0, totalViews: 0, totalMessages: 0 });
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
 
   useEffect(() => {
-    if (!user) return;
-    const load = async () => {
-      try {
-        const [itemsRes, convsRes] = await Promise.all([
-          supabase.from('items').select('id, views').eq('seller_id', user.id).eq('is_active', true),
-          supabase.from('conversations').select('id').eq('seller_id', user.id),
-        ]);
-
-        if (itemsRes.error) {
-          console.error('Error fetching items:', itemsRes.error);
-        }
-        if (convsRes.error) {
-          console.error('Error fetching conversations:', convsRes.error);
-        }
-
-        const items = itemsRes.data ?? [];
-        const totalViews = items.reduce((s, i) => s + (i.views ?? 0), 0);
-        setStats({
-          totalItems: items.length,
-          totalViews,
-          totalMessages: convsRes.data?.length ?? 0,
-        });
-      } catch (err) {
-        console.error('Unexpected error loading stats:', err);
-        setStats({ totalItems: 0, totalViews: 0, totalMessages: 0 });
-      } finally {
-        setLoading(false);
-      }
-    };
     load();
-  }, [user]);
+  }, [user, load]);
 
   const statCards = [
     { label: 'Active Listings', value: stats.totalItems, icon: Package, color: 'bg-blue-50 text-blue-600' },
@@ -77,6 +78,22 @@ export default function DashboardPage({ setPage }: Props) {
       </div>
 
       <div className="px-4 mt-4 space-y-4">
+        {error && (
+          <div className="bg-red-50 text-red-600 text-sm p-4 rounded-xl border border-red-100 flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-2">
+              <AlertCircle size={18} />
+              <span>{error}</span>
+            </div>
+            <button 
+              onClick={load} 
+              className="flex items-center gap-1.5 font-bold hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+            >
+              <RefreshCw size={14} />
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3">
           {statCards.map(({ label, value, icon: Icon, color }) => (
